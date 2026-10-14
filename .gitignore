@@ -236,3 +236,7 @@ src/lib/public/libcef_d.lib
 src/lib/public/libcef_dll_wrapper_d.lib
 
 src/vice3
+
+# Steamworks SDK headers may not be redistributed, see src/public/steamworks_ugc/README.md
+/src/public/steamworks_ugc/*
+!/src/public/steamworks_ugc/README.md
