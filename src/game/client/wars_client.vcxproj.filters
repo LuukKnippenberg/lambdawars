@@ -2465,6 +2465,9 @@
     <ClCompile Include="lambdawars\wars_workshop.cpp">
       <Filter>Source Files\wars</Filter>
     </ClCompile>
+    <ClCompile Include="lambdawars\wars_workshop_content.cpp">
+      <Filter>Source Files\wars</Filter>
+    </ClCompile>
     <ClCompile Include="lambdawars\wars_workshop_python.cpp">
       <Filter>Source Files\wars</Filter>
     </ClCompile>
@@ -5006,6 +5009,9 @@
       <Filter>Source Files\wars</Filter>
     </ClInclude>
     <ClInclude Include="lambdawars\wars_workshop.h">
+      <Filter>Source Files\wars</Filter>
+    </ClInclude>
+    <ClInclude Include="lambdawars\wars_workshop_content.h">
       <Filter>Source Files\wars</Filter>
     </ClInclude>
     <ClInclude Include="lambdawars\wars_workshop_steam.h">

@@ -28,8 +28,12 @@ enum WorkshopItemState_t
 	WORKSHOP_ITEM_DOWNLOAD_PENDING	= 32,
 };
 
-// Tries to acquire ISteamUGC. Requires the engine to have initialized the steam api.
-bool WarsWorkshopSteam_Init();
+// Interface versions to request from the engine's ISteamClient (GetISteamGenericInterface)
+const char *WarsWorkshopSteam_GetUGCInterfaceVersion();
+const char *WarsWorkshopSteam_GetUtilsInterfaceVersion();
+// Takes the ISteamUGC and ISteamUtils interfaces of those versions. Fails if either is NULL.
+bool WarsWorkshopSteam_Init( void *pSteamUGC, void *pSteamUtils );
+void WarsWorkshopSteam_Shutdown();
 bool WarsWorkshopSteam_IsAvailable();
 const char *WarsWorkshopSteam_GetError();
 

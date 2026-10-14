@@ -11,6 +11,7 @@
 #include "srcpy.h"
 #include "wars_workshop.h"
 #include "wars_workshop_steam.h"
+#include "wars_workshop_content.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -91,6 +92,47 @@ static void PyRefreshSubscribedItems()
 	WarsWorkshop().RefreshSubscribedItems();
 }
 
+static bool PyRequestItem( WorkshopItemId_t item )
+{
+	return WarsWorkshop().RequestItem( item );
+}
+
+static const char *PyGetItemStatus( WorkshopItemId_t item )
+{
+	switch( WarsWorkshop().GetItemStatus( item ) )
+	{
+	case WORKSHOP_STATUS_DOWNLOADING:	return "downloading";
+	case WORKSHOP_STATUS_MOUNTED:		return "mounted";
+	case WORKSHOP_STATUS_FAILED:		return "failed";
+	case WORKSHOP_STATUS_REJECTED:		return "rejected";
+	default:							return "none";
+	}
+}
+
+static const char *PyGetItemError( WorkshopItemId_t item )
+{
+	return WarsWorkshop().GetItemError( item );
+}
+
+static WorkshopItemId_t PyFindMapItem( const char *pszMapName )
+{
+	return WarsWorkshop().FindMapItem( pszMapName );
+}
+
+static bp::tuple PyGetItemDownloadProgress( WorkshopItemId_t item )
+{
+	unsigned long long bytesDownloaded = 0, bytesTotal = 0;
+	WarsWorkshopSteam_GetItemDownloadInfo( item, &bytesDownloaded, &bytesTotal );
+	return bp::make_tuple( bytesDownloaded, bytesTotal );
+}
+
+static bp::tuple PyValidateItemFolder( const char *pszFolder )
+{
+	char szReason[512];
+	bool bValid = WarsWorkshop_ValidateItemFolder( pszFolder, szReason, sizeof( szReason ) );
+	return bp::make_tuple( bValid, (const char *)szReason );
+}
+
 BOOST_PYTHON_MODULE(_workshop)
 {
 	bp::def( "IsAvailable", WarsWorkshopSteam_IsAvailable );
@@ -101,6 +143,16 @@ BOOST_PYTHON_MODULE(_workshop)
 	bp::def( "GetItemState", WarsWorkshopSteam_GetItemState );
 	bp::def( "GetItemInstallFolder", PyGetItemInstallFolder );
 	bp::def( "RefreshSubscribedItems", PyRefreshSubscribedItems );
+
+	// Downloading items without subscribing, e.g. the map of a game lobby
+	bp::def( "RequestItem", PyRequestItem );
+	bp::def( "GetItemStatus", PyGetItemStatus );
+	bp::def( "GetItemError", PyGetItemError );
+	bp::def( "GetItemDownloadProgress", PyGetItemDownloadProgress );
+	bp::def( "FindMapItem", PyFindMapItem );
+
+	// Content validation, the same rules used before mounting an item
+	bp::def( "ValidateItemFolder", PyValidateItemFolder );
 
 	// Publishing
 	bp::def( "CreateItem", WarsWorkshopSteam_CreateItem );

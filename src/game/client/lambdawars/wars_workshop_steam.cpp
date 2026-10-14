@@ -2,14 +2,18 @@
 //
 // Purpose: Access to a current ISteamUGC (Steam Workshop) interface.
 //
-// The engine uses a 2010-era steam_api.dll without a usable ISteamUGC, and we
-// cannot replace it because the engine is built against it. Instead we ask the
-// Steam client's own steamclient.dll (already loaded by steam_api.dll) for a
-// current ISteamClient, and reuse the pipe and user handles that the old
-// steam_api.dll opened.
+// The engine uses a 2010-era steam_api.dll whose headers have no usable
+// ISteamUGC, and we cannot replace it because the engine is built against it.
+// Its ISteamClient can still return any interface version the Steam client
+// supports (ISteamClient::GetISteamGenericInterface), so wars_workshop.cpp
+// requests the current ISteamUGC and ISteamUtils through it. All communication
+// with Steam goes through the engine's steam api, as the Steamworks SDK Access
+// Agreement requires (no direct access to steamclient.dll), and the engine's
+// steam_api.dll keeps dispatching the callbacks.
 //
-// This file must not include cbase.h or any of the old steam headers. The
-// Steamworks SDK 1.65 headers in public/steamworks_ugc are wrapped in their own
+// This file only uses those interfaces, so it is built against the headers of
+// Steamworks SDK 1.65 in public/steamworks_ugc. It must not include cbase.h or
+// any of the old steam headers. The new headers are wrapped in their own
 // namespace so their classes cannot clash with the old versions used by the
 // rest of the dll. No precompiled header is used for this file.
 //
@@ -23,7 +27,6 @@
 
 namespace WarsSteamworks
 {
-#include "steamworks_ugc/isteamclient.h"
 #include "steamworks_ugc/isteamugc.h"
 #include "steamworks_ugc/isteamutils.h"
 }
@@ -32,13 +35,8 @@ namespace WarsSteamworks
 
 using namespace WarsSteamworks;
 
-typedef void *(__cdecl *SteamCreateInterfaceFn)( const char *pName, int *pReturnCode );
-typedef HSteamPipe (__cdecl *SteamGetHSteamPipeFn)();
-typedef HSteamUser (__cdecl *SteamGetHSteamUserFn)();
-
 static ISteamUGC *s_pSteamUGC = NULL;
-// Used to poll the results of asynchronous calls. The old steam_api.dll dispatcher
-// cannot deliver call results for these newer structures, so they are not registered.
+// Used to poll the results of asynchronous calls instead of registering call results
 static ISteamUtils *s_pSteamUtils = NULL;
 static char s_szError[256] = "Not initialized";
 
@@ -48,62 +46,50 @@ static void SetError( const char *pError )
 }
 
 //-----------------------------------------------------------------------------
+// Purpose: Interface versions of the headers this file is built against
+//-----------------------------------------------------------------------------
+const char *WarsWorkshopSteam_GetUGCInterfaceVersion()
+{
+	return STEAMUGC_INTERFACE_VERSION;
+}
+
+const char *WarsWorkshopSteam_GetUtilsInterfaceVersion()
+{
+	return STEAMUTILS_INTERFACE_VERSION;
+}
+
+//-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-bool WarsWorkshopSteam_Init()
+bool WarsWorkshopSteam_Init( void *pSteamUGC, void *pSteamUtils )
 {
 	if( s_pSteamUGC )
 		return true;
 
-	HMODULE hSteamAPI = GetModuleHandleA( "steam_api.dll" );
-	HMODULE hSteamClient = GetModuleHandleA( "steamclient.dll" );
-	if( !hSteamAPI || !hSteamClient )
+	if( !pSteamUGC || !pSteamUtils )
 	{
-		SetError( "steam_api.dll or steamclient.dll is not loaded (is Steam running?)" );
+		char szError[256];
+		_snprintf_s( szError, sizeof( szError ), _TRUNCATE, "Steam does not provide %s or %s (is Steam running and up to date?)",
+			STEAMUGC_INTERFACE_VERSION, STEAMUTILS_INTERFACE_VERSION );
+		SetError( szError );
 		return false;
 	}
 
-	SteamGetHSteamPipeFn pfnGetHSteamPipe = (SteamGetHSteamPipeFn)GetProcAddress( hSteamAPI, "SteamAPI_GetHSteamPipe" );
-	SteamGetHSteamUserFn pfnGetHSteamUser = (SteamGetHSteamUserFn)GetProcAddress( hSteamAPI, "SteamAPI_GetHSteamUser" );
-	SteamCreateInterfaceFn pfnCreateInterface = (SteamCreateInterfaceFn)GetProcAddress( hSteamClient, "CreateInterface" );
-	if( !pfnGetHSteamPipe || !pfnGetHSteamUser || !pfnCreateInterface )
-	{
-		SetError( "Missing exports in steam_api.dll or steamclient.dll" );
-		return false;
-	}
-
-	HSteamPipe hSteamPipe = pfnGetHSteamPipe();
-	HSteamUser hSteamUser = pfnGetHSteamUser();
-	if( !hSteamPipe || !hSteamUser )
-	{
-		SetError( "Steam api is not initialized yet" );
-		return false;
-	}
-
-	ISteamClient *pSteamClient = (ISteamClient *)pfnCreateInterface( STEAMCLIENT_INTERFACE_VERSION, NULL );
-	if( !pSteamClient )
-	{
-		SetError( "steamclient.dll does not provide " STEAMCLIENT_INTERFACE_VERSION );
-		return false;
-	}
-
-	ISteamUtils *pSteamUtils = pSteamClient->GetISteamUtils( hSteamPipe, STEAMUTILS_INTERFACE_VERSION );
-	if( !pSteamUtils )
-	{
-		SetError( "steamclient.dll does not provide " STEAMUTILS_INTERFACE_VERSION );
-		return false;
-	}
-
-	s_pSteamUGC = pSteamClient->GetISteamUGC( hSteamUser, hSteamPipe, STEAMUGC_INTERFACE_VERSION );
-	if( !s_pSteamUGC )
-	{
-		SetError( "steamclient.dll does not provide " STEAMUGC_INTERFACE_VERSION );
-		return false;
-	}
-	s_pSteamUtils = pSteamUtils;
-
+	s_pSteamUGC = (ISteamUGC *)pSteamUGC;
+	s_pSteamUtils = (ISteamUtils *)pSteamUtils;
 	SetError( "" );
 	return true;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: The interfaces belong to the engine's Steam connection, which the
+//			engine shuts down itself.
+//-----------------------------------------------------------------------------
+void WarsWorkshopSteam_Shutdown()
+{
+	s_pSteamUGC = NULL;
+	s_pSteamUtils = NULL;
+	SetError( "Shut down" );
 }
 
 //-----------------------------------------------------------------------------
