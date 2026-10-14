@@ -1,4 +1,4 @@
-//====== Copyright © Sandern Corporation, All rights reserved. ===========//
+//====== Copyright ï¿½ Sandern Corporation, All rights reserved. ===========//
 //
 // Purpose: Implementation of save/loading the Recast meshes
 //
@@ -223,8 +223,12 @@ bool CRecastMgr::Load()
 		navIsInBsp = true;
 		if ( !filesystem->ReadFile( filename, "BSP", fileBuffer ) )	// ... and this looks for one if it's the only one around.
 		{
-			InitDefaultMeshes();
-			return false;
+			navIsInBsp = false;
+			if ( !filesystem->ReadFile( filename, "GAME", fileBuffer ) )	// ... and workshop maps are only mounted on the GAME path.
+			{
+				InitDefaultMeshes();
+				return false;
+			}
 		}
 	}
 
