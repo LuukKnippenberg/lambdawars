@@ -170,6 +170,20 @@ bool CWarsWorkshop::SubscribeItem( WorkshopItemId_t item )
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
+bool CWarsWorkshop::UnsubscribeItem( WorkshopItemId_t item )
+{
+	if( !m_bSteamReady || !WarsWorkshopSteam_UnsubscribeItem( item ) )
+		return false;
+
+	int pendingIdx = FindPendingItem( item );
+	if( pendingIdx != -1 && m_PendingItems[pendingIdx].bSubscribing )
+		m_PendingItems.Remove( pendingIdx );
+	return true;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose:
+//-----------------------------------------------------------------------------
 bool CWarsWorkshop::RequestItem( WorkshopItemId_t item )
 {
 	if( !m_bSteamReady || !item )

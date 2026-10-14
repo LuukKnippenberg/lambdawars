@@ -335,3 +335,140 @@ bool WarsWorkshopSteam_GetSubmitItemUpdateResult( WorkshopAPICall_t call, Worksh
 	result.bNeedsLegalAgreement = data.m_bUserNeedsToAcceptWorkshopLegalAgreement;
 	return true;
 }
+
+//-----------------------------------------------------------------------------
+// Purpose: Unsubscribing is asynchronous, the result is not tracked. The
+//			content is removed by Steam after the game quits.
+//-----------------------------------------------------------------------------
+bool WarsWorkshopSteam_UnsubscribeItem( WorkshopItemId_t item )
+{
+	if( !s_pSteamUGC )
+		return false;
+	return s_pSteamUGC->UnsubscribeItem( item ) != k_uAPICallInvalid;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Applies the settings shared by all queries
+//-----------------------------------------------------------------------------
+static WorkshopQueryHandle_t InitQuery( UGCQueryHandle_t handle )
+{
+	if( handle == k_UGCQueryHandleInvalid )
+		return WORKSHOP_QUERY_HANDLE_INVALID;
+
+	// Full descriptions are shown in the item details
+	s_pSteamUGC->SetReturnLongDescription( handle, true );
+	// Allows switching back and forth between pages without new requests
+	s_pSteamUGC->SetAllowCachedResponse( handle, 60 );
+	return handle;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Query over all items of this game. Page numbers start at 1.
+//-----------------------------------------------------------------------------
+WorkshopQueryHandle_t WarsWorkshopSteam_CreateQueryAll( int queryType, unsigned int page )
+{
+	if( !s_pSteamUGC )
+		return WORKSHOP_QUERY_HANDLE_INVALID;
+
+	AppId_t appID = s_pSteamUtils->GetAppID();
+	return InitQuery( s_pSteamUGC->CreateQueryAllUGCRequest( (EUGCQuery)queryType, k_EUGCMatchingUGCType_Items, appID, appID, page ) );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Query over a list of a user, like their subscribed or published items
+//-----------------------------------------------------------------------------
+WorkshopQueryHandle_t WarsWorkshopSteam_CreateQueryUser( unsigned int accountID, int list, int sortOrder, unsigned int page )
+{
+	if( !s_pSteamUGC )
+		return WORKSHOP_QUERY_HANDLE_INVALID;
+
+	AppId_t appID = s_pSteamUtils->GetAppID();
+	return InitQuery( s_pSteamUGC->CreateQueryUserUGCRequest( accountID, (EUserUGCList)list, k_EUGCMatchingUGCType_Items,
+		(EUserUGCListSortOrder)sortOrder, appID, appID, page ) );
+}
+
+bool WarsWorkshopSteam_SetQuerySearchText( WorkshopQueryHandle_t handle, const char *pszText )
+{
+	return s_pSteamUGC && s_pSteamUGC->SetSearchText( handle, pszText );
+}
+
+bool WarsWorkshopSteam_AddQueryRequiredTag( WorkshopQueryHandle_t handle, const char *pszTag )
+{
+	return s_pSteamUGC && s_pSteamUGC->AddRequiredTag( handle, pszTag );
+}
+
+bool WarsWorkshopSteam_SetQueryRankedByTrendDays( WorkshopQueryHandle_t handle, unsigned int days )
+{
+	return s_pSteamUGC && s_pSteamUGC->SetRankedByTrendDays( handle, days );
+}
+
+WorkshopAPICall_t WarsWorkshopSteam_SendQuery( WorkshopQueryHandle_t handle )
+{
+	if( !s_pSteamUGC )
+		return k_uAPICallInvalid;
+	return s_pSteamUGC->SendQueryUGCRequest( handle );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: 
+//-----------------------------------------------------------------------------
+bool WarsWorkshopSteam_GetQueryCompleted( WorkshopAPICall_t call, WorkshopQueryResult_t &result )
+{
+	SteamUGCQueryCompleted_t data;
+	memset( &data, 0, sizeof( data ) );
+	if( !GetCallResult( call, data, result.bIOFailure ) )
+		return false;
+
+	result.result = result.bIOFailure ? k_EResultIOFailure : data.m_eResult;
+	result.numResults = data.m_unNumResultsReturned;
+	result.totalResults = data.m_unTotalMatchingResults;
+	return true;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: 
+//-----------------------------------------------------------------------------
+bool WarsWorkshopSteam_GetQueryItem( WorkshopQueryHandle_t handle, unsigned int index, WorkshopItemDetails_t &details )
+{
+	if( !s_pSteamUGC )
+		return false;
+
+	// Large structure (full description), so not on the stack
+	SteamUGCDetails_t *pData = new SteamUGCDetails_t;
+	bool bSuccess = s_pSteamUGC->GetQueryUGCResult( handle, index, pData ) && pData->m_eResult == k_EResultOK;
+	if( bSuccess )
+	{
+		memset( &details, 0, sizeof( details ) );
+		details.item = pData->m_nPublishedFileId;
+		strncpy_s( details.szTitle, sizeof( details.szTitle ), pData->m_rgchTitle, _TRUNCATE );
+		strncpy_s( details.szDescription, sizeof( details.szDescription ), pData->m_rgchDescription, _TRUNCATE );
+		strncpy_s( details.szTags, sizeof( details.szTags ), pData->m_rgchTags, _TRUNCATE );
+		details.ownerSteamID = pData->m_ulSteamIDOwner;
+		details.timeCreated = pData->m_rtimeCreated;
+		details.timeUpdated = pData->m_rtimeUpdated;
+		details.votesUp = pData->m_unVotesUp;
+		details.votesDown = pData->m_unVotesDown;
+		details.score = pData->m_flScore;
+		details.fileSize = pData->m_ulTotalFilesSize ? pData->m_ulTotalFilesSize : (unsigned long long)pData->m_nFileSize;
+		details.visibility = pData->m_eVisibility;
+		details.bBanned = pData->m_bBanned;
+
+		if( !s_pSteamUGC->GetQueryUGCPreviewURL( handle, index, details.szPreviewURL, sizeof( details.szPreviewURL ) ) )
+			details.szPreviewURL[0] = '\0';
+
+		uint64 subscriptions = 0;
+		if( s_pSteamUGC->GetQueryUGCStatistic( handle, index, k_EItemStatistic_NumUniqueSubscriptions, &subscriptions ) )
+			details.subscriptions = subscriptions;
+	}
+	delete pData;
+	return bSuccess;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: 
+//-----------------------------------------------------------------------------
+void WarsWorkshopSteam_ReleaseQuery( WorkshopQueryHandle_t handle )
+{
+	if( s_pSteamUGC && handle != WORKSHOP_QUERY_HANDLE_INVALID )
+		s_pSteamUGC->ReleaseQueryUGCRequest( handle );
+}

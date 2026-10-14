@@ -41,6 +41,8 @@ public:
 	// Mounts installed subscribed items and requests downloads for the rest
 	void RefreshSubscribedItems();
 	bool SubscribeItem( WorkshopItemId_t item );
+	// The item stays mounted until the game quits, after which Steam removes it
+	bool UnsubscribeItem( WorkshopItemId_t item );
 	// Downloads (or updates) an item without subscribing and mounts it, for
 	// example the map of a game lobby
 	bool RequestItem( WorkshopItemId_t item );

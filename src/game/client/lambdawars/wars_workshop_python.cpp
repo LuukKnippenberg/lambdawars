@@ -126,6 +126,101 @@ static bp::tuple PyGetItemDownloadProgress( WorkshopItemId_t item )
 	return bp::make_tuple( bytesDownloaded, bytesTotal );
 }
 
+static bool PySubscribeItem( WorkshopItemId_t item )
+{
+	return WarsWorkshop().SubscribeItem( item );
+}
+
+static bool PyUnsubscribeItem( WorkshopItemId_t item )
+{
+	return WarsWorkshop().UnsubscribeItem( item );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Sends a query, returns (query handle, call) or None on failure
+//-----------------------------------------------------------------------------
+static bp::object PySendPreparedQuery( WorkshopQueryHandle_t handle, const char *pszRequiredTag )
+{
+	if( handle == WORKSHOP_QUERY_HANDLE_INVALID )
+		return bp::object();
+	if( pszRequiredTag && pszRequiredTag[0] )
+		WarsWorkshopSteam_AddQueryRequiredTag( handle, pszRequiredTag );
+
+	WorkshopAPICall_t call = WarsWorkshopSteam_SendQuery( handle );
+	if( call == WORKSHOP_API_CALL_INVALID )
+	{
+		WarsWorkshopSteam_ReleaseQuery( handle );
+		return bp::object();
+	}
+	return bp::make_tuple( handle, call );
+}
+
+static bp::object PySendQuery( int queryType, unsigned int page, const char *pszSearchText, const char *pszRequiredTag, unsigned int trendDays )
+{
+	WorkshopQueryHandle_t handle = WarsWorkshopSteam_CreateQueryAll( queryType, page );
+	if( handle == WORKSHOP_QUERY_HANDLE_INVALID )
+		return bp::object();
+	if( pszSearchText && pszSearchText[0] )
+		WarsWorkshopSteam_SetQuerySearchText( handle, pszSearchText );
+	if( trendDays )
+		WarsWorkshopSteam_SetQueryRankedByTrendDays( handle, trendDays );
+	return PySendPreparedQuery( handle, pszRequiredTag );
+}
+
+static bp::object PySendUserQuery( unsigned int accountID, int list, int sortOrder, unsigned int page, const char *pszRequiredTag )
+{
+	return PySendPreparedQuery( WarsWorkshopSteam_CreateQueryUser( accountID, list, sortOrder, page ), pszRequiredTag );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Returns None while the query is pending. Otherwise returns a dict
+//			with the results and releases the query handle.
+//-----------------------------------------------------------------------------
+static bp::object PyGetQueryResults( WorkshopQueryHandle_t handle, WorkshopAPICall_t call )
+{
+	WorkshopQueryResult_t queryResult;
+	if( !WarsWorkshopSteam_GetQueryCompleted( call, queryResult ) )
+		return bp::object();
+
+	bp::list items;
+	if( !queryResult.bIOFailure && queryResult.result == 1 )
+	{
+		WorkshopItemDetails_t *pDetails = new WorkshopItemDetails_t;
+		for( unsigned int i = 0; i < queryResult.numResults; i++ )
+		{
+			if( !WarsWorkshopSteam_GetQueryItem( handle, i, *pDetails ) )
+				continue;
+
+			bp::dict item;
+			item["publishedfileid"] = pDetails->item;
+			item["title"] = bp::object( bp::handle<>( PyUnicode_DecodeUTF8( pDetails->szTitle, V_strlen( pDetails->szTitle ), "replace" ) ) );
+			item["description"] = bp::object( bp::handle<>( PyUnicode_DecodeUTF8( pDetails->szDescription, V_strlen( pDetails->szDescription ), "replace" ) ) );
+			item["tags"] = bp::object( bp::handle<>( PyUnicode_DecodeUTF8( pDetails->szTags, V_strlen( pDetails->szTags ), "replace" ) ) );
+			item["previewurl"] = (const char *)pDetails->szPreviewURL;
+			item["owner"] = pDetails->ownerSteamID;
+			item["timecreated"] = pDetails->timeCreated;
+			item["timeupdated"] = pDetails->timeUpdated;
+			item["votesup"] = pDetails->votesUp;
+			item["votesdown"] = pDetails->votesDown;
+			item["score"] = pDetails->score;
+			item["filesize"] = pDetails->fileSize;
+			item["subscriptions"] = pDetails->subscriptions;
+			item["visibility"] = pDetails->visibility;
+			item["banned"] = pDetails->bBanned;
+			items.append( item );
+		}
+		delete pDetails;
+	}
+	WarsWorkshopSteam_ReleaseQuery( handle );
+
+	bp::dict result;
+	result["iofailure"] = queryResult.bIOFailure;
+	result["result"] = queryResult.result;
+	result["total"] = queryResult.totalResults;
+	result["items"] = items;
+	return result;
+}
+
 static bp::tuple PyValidateItemFolder( const char *pszFolder )
 {
 	char szReason[512];
@@ -153,6 +248,32 @@ BOOST_PYTHON_MODULE(_workshop)
 
 	// Content validation, the same rules used before mounting an item
 	bp::def( "ValidateItemFolder", PyValidateItemFolder );
+
+	// Browsing
+	bp::def( "SubscribeItem", PySubscribeItem );
+	bp::def( "UnsubscribeItem", PyUnsubscribeItem );
+	bp::def( "SendQuery", PySendQuery );
+	bp::def( "SendUserQuery", PySendUserQuery );
+	bp::def( "GetQueryResults", PyGetQueryResults );
+	bp::def( "ReleaseQuery", WarsWorkshopSteam_ReleaseQuery );
+
+	bp::scope().attr( "RESULTS_PER_PAGE" ) = WORKSHOP_RESULTS_PER_PAGE;
+
+	bp::scope().attr( "QUERY_RANKED_BY_VOTE" ) = (int)WORKSHOP_QUERY_RANKED_BY_VOTE;
+	bp::scope().attr( "QUERY_RANKED_BY_PUBLICATION_DATE" ) = (int)WORKSHOP_QUERY_RANKED_BY_PUBLICATION_DATE;
+	bp::scope().attr( "QUERY_RANKED_BY_TREND" ) = (int)WORKSHOP_QUERY_RANKED_BY_TREND;
+	bp::scope().attr( "QUERY_RANKED_BY_TEXT_SEARCH" ) = (int)WORKSHOP_QUERY_RANKED_BY_TEXT_SEARCH;
+	bp::scope().attr( "QUERY_RANKED_BY_UNIQUE_SUBSCRIPTIONS" ) = (int)WORKSHOP_QUERY_RANKED_BY_UNIQUE_SUBSCRIPTIONS;
+	bp::scope().attr( "QUERY_RANKED_BY_LAST_UPDATED_DATE" ) = (int)WORKSHOP_QUERY_RANKED_BY_LAST_UPDATED_DATE;
+
+	bp::scope().attr( "USER_LIST_PUBLISHED" ) = (int)WORKSHOP_USER_LIST_PUBLISHED;
+	bp::scope().attr( "USER_LIST_SUBSCRIBED" ) = (int)WORKSHOP_USER_LIST_SUBSCRIBED;
+
+	bp::scope().attr( "USER_SORT_CREATION_DESC" ) = (int)WORKSHOP_USER_SORT_CREATION_DESC;
+	bp::scope().attr( "USER_SORT_TITLE_ASC" ) = (int)WORKSHOP_USER_SORT_TITLE_ASC;
+	bp::scope().attr( "USER_SORT_LAST_UPDATED_DESC" ) = (int)WORKSHOP_USER_SORT_LAST_UPDATED_DESC;
+	bp::scope().attr( "USER_SORT_SUBSCRIPTION_DESC" ) = (int)WORKSHOP_USER_SORT_SUBSCRIPTION_DESC;
+	bp::scope().attr( "USER_SORT_VOTE_SCORE_DESC" ) = (int)WORKSHOP_USER_SORT_VOTE_SCORE_DESC;
 
 	// Publishing
 	bp::def( "CreateItem", WarsWorkshopSteam_CreateItem );
