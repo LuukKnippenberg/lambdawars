@@ -2462,6 +2462,15 @@
     <ClCompile Include="lambdawars\c_wars_steamstats.cpp">
       <Filter>Source Files\wars</Filter>
     </ClCompile>
+    <ClCompile Include="lambdawars\wars_workshop.cpp">
+      <Filter>Source Files\wars</Filter>
+    </ClCompile>
+    <ClCompile Include="lambdawars\wars_workshop_python.cpp">
+      <Filter>Source Files\wars</Filter>
+    </ClCompile>
+    <ClCompile Include="lambdawars\wars_workshop_steam.cpp">
+      <Filter>Source Files\wars</Filter>
+    </ClCompile>
     <ClCompile Include="..\shared\python\srcpy_standalone.cpp">
       <Filter>Source Files\Python</Filter>
     </ClCompile>
@@ -4994,6 +5003,12 @@
       <Filter>Source Files\wars\Shared</Filter>
     </ClInclude>
     <ClInclude Include="lambdawars\c_wars_steamstats.h">
+      <Filter>Source Files\wars</Filter>
+    </ClInclude>
+    <ClInclude Include="lambdawars\wars_workshop.h">
+      <Filter>Source Files\wars</Filter>
+    </ClInclude>
+    <ClInclude Include="lambdawars\wars_workshop_steam.h">
       <Filter>Source Files\wars</Filter>
     </ClInclude>
     <ClInclude Include="..\shared\python\srcpy_standalone.h">
