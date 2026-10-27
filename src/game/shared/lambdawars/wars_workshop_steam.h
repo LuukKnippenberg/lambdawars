@@ -34,6 +34,12 @@ const char *WarsWorkshopSteam_GetUtilsInterfaceVersion();
 // Takes the ISteamUGC and ISteamUtils interfaces of those versions. Fails if either is NULL.
 bool WarsWorkshopSteam_Init( void *pSteamUGC, void *pSteamUtils );
 void WarsWorkshopSteam_Shutdown();
+// App id of the current Steam connection (on dedicated servers, the server's own app)
+unsigned int WarsWorkshopSteam_GetAppID();
+// Dedicated servers only, after Init with the game server's interfaces: sets the folder
+// Workshop items are downloaded to. Must be called before downloading items.
+// The depot is the Workshop depot of the game, which uses the game's app id.
+bool WarsWorkshopSteam_InitWorkshopForGameServer( unsigned int workshopDepotID, const char *pszFolder );
 bool WarsWorkshopSteam_IsAvailable();
 const char *WarsWorkshopSteam_GetError();
 

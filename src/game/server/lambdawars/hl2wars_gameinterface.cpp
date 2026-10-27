@@ -21,6 +21,7 @@
 #endif // ENABLE_PYTHON
 
 #include "wars_gameserver.h"
+#include "wars_workshop_server.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -277,4 +278,6 @@ void WarsUpdateGameServer()
 	{
 		WarsGameServer()->RunFrame();
 	}
+
+	WarsWorkshopServer_Update();
 }

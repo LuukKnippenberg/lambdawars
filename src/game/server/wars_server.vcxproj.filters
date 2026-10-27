@@ -1930,6 +1930,15 @@
     <ClCompile Include="lambdawars\wars_gameserver.cpp">
       <Filter>Source Files\wars</Filter>
     </ClCompile>
+    <ClCompile Include="lambdawars\wars_workshop_server.cpp">
+      <Filter>Source Files\wars</Filter>
+    </ClCompile>
+    <ClCompile Include="..\shared\lambdawars\wars_workshop_content.cpp">
+      <Filter>Source Files\wars</Filter>
+    </ClCompile>
+    <ClCompile Include="..\shared\lambdawars\wars_workshop_steam.cpp">
+      <Filter>Source Files\wars</Filter>
+    </ClCompile>
     <ClCompile Include="..\shared\lambdawars\wars_matchmaking.cpp">
       <Filter>Source Files\wars\Shared</Filter>
     </ClCompile>
@@ -3652,6 +3661,15 @@
       <Filter>Source Files\wars</Filter>
     </ClInclude>
     <ClInclude Include="lambdawars\hl2wars_gameinterface.h">
+      <Filter>Source Files\wars</Filter>
+    </ClInclude>
+    <ClInclude Include="lambdawars\wars_workshop_server.h">
+      <Filter>Source Files\wars</Filter>
+    </ClInclude>
+    <ClInclude Include="..\shared\lambdawars\wars_workshop_content.h">
+      <Filter>Source Files\wars</Filter>
+    </ClInclude>
+    <ClInclude Include="..\shared\lambdawars\wars_workshop_steam.h">
       <Filter>Source Files\wars</Filter>
     </ClInclude>
     <ClInclude Include="lambdawars\hl2wars_player.h">

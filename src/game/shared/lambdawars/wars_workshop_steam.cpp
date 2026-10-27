@@ -472,3 +472,22 @@ void WarsWorkshopSteam_ReleaseQuery( WorkshopQueryHandle_t handle )
 	if( s_pSteamUGC && handle != WORKSHOP_QUERY_HANDLE_INVALID )
 		s_pSteamUGC->ReleaseQueryUGCRequest( handle );
 }
+
+//-----------------------------------------------------------------------------
+// Purpose: 
+//-----------------------------------------------------------------------------
+unsigned int WarsWorkshopSteam_GetAppID()
+{
+	return s_pSteamUtils ? s_pSteamUtils->GetAppID() : 0;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Game servers have no subscriptions, items are downloaded on request
+//			into the given folder.
+//-----------------------------------------------------------------------------
+bool WarsWorkshopSteam_InitWorkshopForGameServer( unsigned int workshopDepotID, const char *pszFolder )
+{
+	if( !s_pSteamUGC )
+		return false;
+	return s_pSteamUGC->BInitWorkshopForGameServer( workshopDepotID, pszFolder );
+}
