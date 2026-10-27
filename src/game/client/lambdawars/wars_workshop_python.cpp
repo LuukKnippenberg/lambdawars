@@ -173,6 +173,11 @@ static bp::object PySendUserQuery( unsigned int accountID, int list, int sortOrd
 	return PySendPreparedQuery( WarsWorkshopSteam_CreateQueryUser( accountID, list, sortOrder, page ), pszRequiredTag );
 }
 
+static bp::object PySendDetailsQuery( WorkshopItemId_t item )
+{
+	return PySendPreparedQuery( WarsWorkshopSteam_CreateQueryDetails( item ), NULL );
+}
+
 //-----------------------------------------------------------------------------
 // Purpose: Returns None while the query is pending. Otherwise returns a dict
 //			with the results and releases the query handle.
@@ -268,6 +273,7 @@ BOOST_PYTHON_MODULE(_workshop)
 	bp::def( "UnsubscribeItem", PyUnsubscribeItem );
 	bp::def( "SendQuery", PySendQuery );
 	bp::def( "SendUserQuery", PySendUserQuery );
+	bp::def( "SendDetailsQuery", PySendDetailsQuery );
 	bp::def( "GetQueryResults", PyGetQueryResults );
 	bp::def( "ReleaseQuery", WarsWorkshopSteam_ReleaseQuery );
 

@@ -169,6 +169,8 @@ struct WorkshopItemDetails_t
 
 WorkshopQueryHandle_t WarsWorkshopSteam_CreateQueryAll( int queryType, unsigned int page );
 WorkshopQueryHandle_t WarsWorkshopSteam_CreateQueryUser( unsigned int accountID, int list, int sortOrder, unsigned int page );
+// Query for the details of a single item
+WorkshopQueryHandle_t WarsWorkshopSteam_CreateQueryDetails( WorkshopItemId_t item );
 bool WarsWorkshopSteam_SetQuerySearchText( WorkshopQueryHandle_t handle, const char *pszText );
 bool WarsWorkshopSteam_AddQueryRequiredTag( WorkshopQueryHandle_t handle, const char *pszTag );
 bool WarsWorkshopSteam_SetQueryRankedByTrendDays( WorkshopQueryHandle_t handle, unsigned int days );

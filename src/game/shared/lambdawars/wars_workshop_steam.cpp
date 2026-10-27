@@ -387,6 +387,15 @@ WorkshopQueryHandle_t WarsWorkshopSteam_CreateQueryUser( unsigned int accountID,
 		(EUserUGCListSortOrder)sortOrder, appID, appID, page ) );
 }
 
+WorkshopQueryHandle_t WarsWorkshopSteam_CreateQueryDetails( WorkshopItemId_t item )
+{
+	if( !s_pSteamUGC )
+		return WORKSHOP_QUERY_HANDLE_INVALID;
+
+	PublishedFileId_t publishedFileID = item;
+	return InitQuery( s_pSteamUGC->CreateQueryUGCDetailsRequest( &publishedFileID, 1 ) );
+}
+
 bool WarsWorkshopSteam_SetQuerySearchText( WorkshopQueryHandle_t handle, const char *pszText )
 {
 	return s_pSteamUGC && s_pSteamUGC->SetSearchText( handle, pszText );
