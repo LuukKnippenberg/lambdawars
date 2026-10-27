@@ -12,6 +12,7 @@
 #include "wars_workshop.h"
 #include "wars_workshop_steam.h"
 #include "wars_workshop_content.h"
+#include "wars_filedialog.h"
 #include "srcpy_steam.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -240,6 +241,15 @@ static int PyRequestLANServerList( AppId_t iApp, PySteamMatchmakingServerListRes
 	return (int)steamapicontext->SteamMatchmakingServers()->RequestLANServerList( iApp, pRequestServersResponse );
 }
 
+static bp::object PyGetFileDialogResult()
+{
+	if( WarsFileDialog_IsOpen() )
+		return bp::object();
+	char szPath[MAX_PATH * 3];
+	WarsFileDialog_GetResult( szPath, sizeof( szPath ) );
+	return bp::object( (const char *)szPath );
+}
+
 static bp::tuple PyValidateItemFolder( const char *pszFolder )
 {
 	char szReason[512];
@@ -278,6 +288,11 @@ BOOST_PYTHON_MODULE(_workshop)
 	bp::def( "SendDetailsQuery", PySendDetailsQuery );
 	bp::def( "GetQueryResults", PyGetQueryResults );
 	bp::def( "ReleaseQuery", WarsWorkshopSteam_ReleaseQuery );
+
+	// Choosing files, like the preview image. GetFileDialogResult returns None while the
+	// dialog is open, then the chosen path or an empty string if it was cancelled.
+	bp::def( "OpenFileDialog", WarsFileDialog_Open );
+	bp::def( "GetFileDialogResult", PyGetFileDialogResult );
 
 	// Testing dedicated servers on the local network
 	bp::def( "RequestLANServerList", PyRequestLANServerList );

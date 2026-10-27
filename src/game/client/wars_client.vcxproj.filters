@@ -2462,6 +2462,9 @@
     <ClCompile Include="lambdawars\c_wars_steamstats.cpp">
       <Filter>Source Files\wars</Filter>
     </ClCompile>
+    <ClCompile Include="lambdawars\wars_filedialog.cpp">
+      <Filter>Source Files\wars</Filter>
+    </ClCompile>
     <ClCompile Include="lambdawars\wars_workshop.cpp">
       <Filter>Source Files\wars</Filter>
     </ClCompile>
@@ -5006,6 +5009,9 @@
       <Filter>Source Files\wars\Shared</Filter>
     </ClInclude>
     <ClInclude Include="lambdawars\c_wars_steamstats.h">
+      <Filter>Source Files\wars</Filter>
+    </ClInclude>
+    <ClInclude Include="lambdawars\wars_filedialog.h">
       <Filter>Source Files\wars</Filter>
     </ClInclude>
     <ClInclude Include="lambdawars\wars_workshop.h">
