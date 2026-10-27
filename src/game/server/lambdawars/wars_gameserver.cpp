@@ -23,7 +23,7 @@ static ConVar wars_gameserver_graceperiod( "wars_gameserver_graceperiod", "15", 
 static ConVar wars_gameserver_noplayers_timeout("wars_gameserver_noplayers_timeout", "60", 0, "Time before game server changes back to available when no players are connected." );
 
 // Below the time the lobby waits for a response to a request for a game with a Workshop map
-static ConVar wars_gameserver_workshop_timeout( "wars_gameserver_workshop_timeout", "110", 0, "Time a requested game waits for its Steam Workshop map to download before it is denied" );
+static ConVar wars_gameserver_workshop_timeout( "wars_gameserver_workshop_timeout", "290", 0, "Time a requested game waits for its Steam Workshop map to download before it is denied" );
 
 static ConVar wars_gameserver_password( "wars_gameserver_password", "", FCVAR_PROTECTED, "Only allows clients with matching mm_password to connect through lobby." );
 

@@ -2,9 +2,11 @@
 //
 // Purpose: Downloads and mounts Steam Workshop items on dedicated servers.
 //
-// Prototype: items are only downloaded on request with the console command
-// wars_sv_workshop_download. On listen servers the client mounts Workshop
-// items (see wars_workshop.cpp), so this only runs on dedicated servers.
+// Items are downloaded when a lobby requests a game with a Workshop map, or
+// with the console command wars_sv_workshop_download. On listen servers the
+// client mounts Workshop items (see wars_workshop.cpp), so this only runs on
+// dedicated servers. Old items are removed when the Workshop starts, see
+// wars_sv_workshop_max_items.
 //
 // The game server's ISteamClient (set up by the engine's steam_api.dll) is
 // asked for a current ISteamUGC by version, like the client does, so all
@@ -18,15 +20,24 @@
 #include "wars_workshop_content.h"
 #include "filesystem.h"
 #include "steam/steam_gameserver.h"
+#include <io.h>
+#include <direct.h>
+#include <time.h>
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
 // Folder in the mod directory Workshop items are downloaded to
 #define WORKSHOP_SERVER_CONTENT_FOLDER "workshop_content"
+// When each item was last used by a game, one "<published file id> <unix time>" per line
+#define WORKSHOP_SERVER_LASTUSED_FILE WORKSHOP_SERVER_CONTENT_FOLDER "/lastused.txt"
 #define WORKSHOP_SERVER_UPDATE_INTERVAL 0.5
 // Time Steam gets to start a download before the item is considered unavailable
 #define WORKSHOP_SERVER_DOWNLOAD_START_TIMEOUT 30.0
+
+static ConVar wars_sv_workshop_max_items( "wars_sv_workshop_max_items", "30", 0,
+	"Dedicated server: number of downloaded Steam Workshop items kept on disk. When the Workshop starts "
+	"(at the first game with a Workshop map), the least recently used items above this number are removed. 0 keeps all items." );
 
 struct WorkshopServerItem_t
 {
@@ -104,11 +115,264 @@ static void PrintGameServerStatus()
 }
 
 //-----------------------------------------------------------------------------
+// Purpose: When downloaded items were last used by a game
+//-----------------------------------------------------------------------------
+struct WorkshopLastUsed_t
+{
+	WorkshopItemId_t item;
+	unsigned int time;
+};
+
+static void LoadLastUsed( CUtlVector< WorkshopLastUsed_t > &lastUsed )
+{
+	CUtlBuffer buf( 0, 0, CUtlBuffer::TEXT_BUFFER );
+	if( !filesystem->ReadFile( WORKSHOP_SERVER_LASTUSED_FILE, "MOD", buf ) )
+		return;
+
+	char szLine[128];
+	while( buf.IsValid() )
+	{
+		buf.GetLine( szLine, sizeof( szLine ) );
+		if( !szLine[0] )
+			break;
+		const char *pszTime = V_strstr( szLine, " " );
+		WorkshopLastUsed_t entry;
+		entry.item = V_atoui64( szLine );
+		entry.time = pszTime ? (unsigned int)V_atoui64( pszTime + 1 ) : 0;
+		if( entry.item )
+			lastUsed.AddToTail( entry );
+	}
+}
+
+static unsigned int GetLastUsedTime( const CUtlVector< WorkshopLastUsed_t > &lastUsed, WorkshopItemId_t item )
+{
+	for( int i = 0; i < lastUsed.Count(); i++ )
+	{
+		if( lastUsed[i].item == item )
+			return lastUsed[i].time;
+	}
+	return 0;
+}
+
+static void SaveLastUsed( const CUtlVector< WorkshopLastUsed_t > &lastUsed )
+{
+	CUtlBuffer buf( 0, 0, CUtlBuffer::TEXT_BUFFER );
+	for( int i = 0; i < lastUsed.Count(); i++ )
+		buf.Printf( "%llu %u\n", lastUsed[i].item, lastUsed[i].time );
+	filesystem->CreateDirHierarchy( WORKSHOP_SERVER_CONTENT_FOLDER, "MOD" );
+	filesystem->WriteFile( WORKSHOP_SERVER_LASTUSED_FILE, "MOD", buf );
+}
+
+static void MarkItemUsed( WorkshopItemId_t item )
+{
+	CUtlVector< WorkshopLastUsed_t > lastUsed;
+	LoadLastUsed( lastUsed );
+
+	int i;
+	for( i = 0; i < lastUsed.Count(); i++ )
+	{
+		if( lastUsed[i].item == item )
+			break;
+	}
+	if( i == lastUsed.Count() )
+	{
+		lastUsed.AddToTail();
+		lastUsed[i].item = item;
+	}
+	lastUsed[i].time = (unsigned int)time( NULL );
+	SaveLastUsed( lastUsed );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Removes the items in the Steam manifest (appworkshop_<appid>.acf),
+//			so Steam downloads them again when they are requested. Only edits
+//			the blocks of the items:
+//				"<published file id>"
+//				{
+//					...
+//				}
+//-----------------------------------------------------------------------------
+static const char *TrimWhitespace( char *pszText )
+{
+	while( *pszText == ' ' || *pszText == '\t' )
+		pszText++;
+	int len = V_strlen( pszText );
+	while( len > 0 && ( pszText[len-1] == ' ' || pszText[len-1] == '\t' || pszText[len-1] == '\r' || pszText[len-1] == '\n' ) )
+		pszText[--len] = '\0';
+	return pszText;
+}
+
+static void RemoveItemsFromSteamManifest( const char *pszManifest, const CUtlVector< WorkshopItemId_t > &removed )
+{
+	// Binary buffers, so the line endings stay as Steam wrote them
+	CUtlBuffer buf;
+	if( !filesystem->ReadFile( pszManifest, NULL, buf ) )
+		return;
+
+	CUtlBuffer out;
+	char szLine[1024], szToken[1024];
+	int skipDepth = 0;
+	bool bSkipNextBlock = false;
+	while( buf.IsValid() )
+	{
+		buf.GetLine( szLine, sizeof( szLine ) );
+		if( !szLine[0] )
+			break;
+		V_strncpy( szToken, szLine, sizeof( szToken ) );
+		const char *pszToken = TrimWhitespace( szToken );
+
+		if( skipDepth > 0 )
+		{
+			if( !V_strcmp( pszToken, "{" ) )
+				skipDepth++;
+			else if( !V_strcmp( pszToken, "}" ) )
+				skipDepth--;
+			continue;
+		}
+		if( bSkipNextBlock )
+		{
+			bSkipNextBlock = false;
+			if( !V_strcmp( pszToken, "{" ) )
+			{
+				skipDepth = 1;
+				continue;
+			}
+		}
+
+		int len = V_strlen( pszToken );
+		if( len > 2 && pszToken[0] == '"' && pszToken[len-1] == '"' && removed.HasElement( V_atoui64( pszToken + 1 ) ) )
+		{
+			bSkipNextBlock = true;
+			continue;
+		}
+		out.Put( szLine, V_strlen( szLine ) );
+	}
+
+	if( !filesystem->WriteFile( pszManifest, NULL, out ) )
+		Warning( "Workshop: could not update %s\n", pszManifest );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose:
+//-----------------------------------------------------------------------------
+static bool DeleteFolder( const char *pszFolder )
+{
+	char szWildcard[MAX_PATH];
+	V_ComposeFileName( pszFolder, "*", szWildcard, sizeof( szWildcard ) );
+
+	_finddata_t findData;
+	intptr_t hFind = _findfirst( szWildcard, &findData );
+	if( hFind != -1 )
+	{
+		do
+		{
+			if( !V_strcmp( findData.name, "." ) || !V_strcmp( findData.name, ".." ) )
+				continue;
+			char szPath[MAX_PATH];
+			V_ComposeFileName( pszFolder, findData.name, szPath, sizeof( szPath ) );
+			if( findData.attrib & _A_SUBDIR )
+				DeleteFolder( szPath );
+			else
+				_unlink( szPath );
+		}
+		while( _findnext( hFind, &findData ) == 0 );
+		_findclose( hFind );
+	}
+	return _rmdir( pszFolder ) == 0;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Keeps at most wars_sv_workshop_max_items downloaded items, removing
+//			the least recently used ones. Runs before Steam reads its manifest
+//			in BInitWorkshopForGameServer, since Steam doesn't expect items to
+//			disappear while it runs.
+//-----------------------------------------------------------------------------
+static void RemoveOldItems( const char *pszWorkshopFolder, unsigned int appID, WorkshopItemId_t keepItem )
+{
+	int maxItems = wars_sv_workshop_max_items.GetInt();
+	if( maxItems <= 0 )
+		return;
+
+	// Steam stores items in <folder>/content/<appid>/<published file id>
+	char szContentFolder[MAX_PATH], szWildcard[MAX_PATH];
+	V_snprintf( szContentFolder, sizeof( szContentFolder ), "%s%ccontent%c%u", pszWorkshopFolder, CORRECT_PATH_SEPARATOR, CORRECT_PATH_SEPARATOR, appID );
+	V_ComposeFileName( szContentFolder, "*", szWildcard, sizeof( szWildcard ) );
+
+	CUtlVector< WorkshopItemId_t > items;
+	_finddata_t findData;
+	intptr_t hFind = _findfirst( szWildcard, &findData );
+	if( hFind == -1 )
+		return;
+	do
+	{
+		WorkshopItemId_t item = V_atoui64( findData.name );
+		if( ( findData.attrib & _A_SUBDIR ) && item )
+			items.AddToTail( item );
+	}
+	while( _findnext( hFind, &findData ) == 0 );
+	_findclose( hFind );
+
+	// The requested item counts as kept, also if it still has to be downloaded
+	int numItems = items.Count() + ( ( keepItem && !items.HasElement( keepItem ) ) ? 1 : 0 );
+	if( numItems <= maxItems )
+		return;
+
+	CUtlVector< WorkshopLastUsed_t > lastUsed;
+	LoadLastUsed( lastUsed );
+
+	// Items in use are never removed. Items without a last used time are removed first.
+	CUtlVector< WorkshopLastUsed_t > candidates;
+	for( int i = 0; i < items.Count(); i++ )
+	{
+		if( items[i] == keepItem || FindItem( items[i] ) != -1 )
+			continue;
+		WorkshopLastUsed_t candidate;
+		candidate.item = items[i];
+		candidate.time = GetLastUsedTime( lastUsed, items[i] );
+		int pos = 0;
+		while( pos < candidates.Count() && candidates[pos].time <= candidate.time )
+			pos++;
+		candidates.InsertBefore( pos, candidate );
+	}
+
+	CUtlVector< WorkshopItemId_t > removed;
+	for( int i = 0; i < candidates.Count() && numItems > maxItems; i++ )
+	{
+		char szItemFolder[MAX_PATH], szName[32];
+		V_snprintf( szName, sizeof( szName ), "%llu", candidates[i].item );
+		V_ComposeFileName( szContentFolder, szName, szItemFolder, sizeof( szItemFolder ) );
+		if( !DeleteFolder( szItemFolder ) )
+		{
+			Warning( "Workshop: could not remove item %llu (%s)\n", candidates[i].item, szItemFolder );
+			continue;
+		}
+		Msg( "Workshop: removed item %llu, more than %d items are downloaded (wars_sv_workshop_max_items)\n", candidates[i].item, maxItems );
+		removed.AddToTail( candidates[i].item );
+		numItems--;
+	}
+
+	if( removed.Count() == 0 )
+		return;
+
+	char szManifest[MAX_PATH], szManifestName[64];
+	V_snprintf( szManifestName, sizeof( szManifestName ), "appworkshop_%u.acf", appID );
+	V_ComposeFileName( pszWorkshopFolder, szManifestName, szManifest, sizeof( szManifest ) );
+	RemoveItemsFromSteamManifest( szManifest, removed );
+
+	for( int i = lastUsed.Count() - 1; i >= 0; i-- )
+	{
+		if( removed.HasElement( lastUsed[i].item ) )
+			lastUsed.Remove( i );
+	}
+	SaveLastUsed( lastUsed );
+}
+
+//-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
 static unsigned int GetGameAppID();
 
-static bool InitWorkshopServer()
+static bool InitWorkshopServer( WorkshopItemId_t keepItem )
 {
 	if( s_bInitialized )
 		return true;
@@ -148,6 +412,7 @@ static bool InitWorkshopServer()
 	char szFolder[MAX_PATH];
 	filesystem->CreateDirHierarchy( WORKSHOP_SERVER_CONTENT_FOLDER, "MOD" );
 	filesystem->RelativePathToFullPath( WORKSHOP_SERVER_CONTENT_FOLDER, "MOD", szFolder, sizeof( szFolder ) );
+	RemoveOldItems( szFolder, gameAppID, keepItem );
 	if( !WarsWorkshopSteam_InitWorkshopForGameServer( gameAppID, szFolder ) )
 	{
 		Warning( "Workshop: BInitWorkshopForGameServer failed for depot %u, folder %s\n", gameAppID, szFolder );
@@ -181,7 +446,7 @@ static int FindItem( WorkshopItemId_t item )
 //-----------------------------------------------------------------------------
 static bool RequestItem( WorkshopItemId_t item )
 {
-	if( !InitWorkshopServer() )
+	if( !InitWorkshopServer( item ) )
 		return false;
 
 	int idx = FindItem( item );
@@ -298,6 +563,7 @@ CON_COMMAND( wars_sv_workshop_download, "Dedicated server: downloads a Steam Wor
 		Warning( "Workshop: failed to download item %s\n", args[1] );
 		return;
 	}
+	MarkItemUsed( item );
 	Msg( "Workshop: downloading item %llu\n", item );
 }
 
@@ -397,6 +663,8 @@ bool WarsWorkshopServer_IsSupported()
 //-----------------------------------------------------------------------------
 WorkshopServerItemStatus_t WarsWorkshopServer_PrepareItem( WorkshopItemId_t item )
 {
+	MarkItemUsed( item );
+
 	int idx = FindItem( item );
 	if( idx != -1 )
 	{
