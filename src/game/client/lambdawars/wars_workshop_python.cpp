@@ -264,6 +264,8 @@ BOOST_PYTHON_MODULE(_workshop)
 	bp::def( "GetItemError", PyGetItemError );
 	bp::def( "GetItemDownloadProgress", PyGetItemDownloadProgress );
 	bp::def( "FindMapItem", PyFindMapItem );
+	// Downloads (or updates) an item into the Steam Workshop cache without mounting it
+	bp::def( "DownloadItem", WarsWorkshopSteam_DownloadItem );
 
 	// Content validation, the same rules used before mounting an item
 	bp::def( "ValidateItemFolder", PyValidateItemFolder );
