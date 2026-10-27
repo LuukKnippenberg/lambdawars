@@ -12,6 +12,7 @@
 #include "wars_workshop.h"
 #include "wars_workshop_steam.h"
 #include "wars_workshop_content.h"
+#include "srcpy_steam.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -221,6 +222,19 @@ static bp::object PyGetQueryResults( WorkshopQueryHandle_t handle, WorkshopAPICa
 	return result;
 }
 
+//-----------------------------------------------------------------------------
+// Purpose: Finds game servers on the local network, used by the lobby when
+//			testing dedicated servers (mm_lan_findserver). The generated
+//			SteamMatchmakingServers.RequestLANServerList binding takes a type
+//			that Python response objects can't be converted to.
+//-----------------------------------------------------------------------------
+static int PyRequestLANServerList( AppId_t iApp, PySteamMatchmakingServerListResponse *pRequestServersResponse )
+{
+	if( !steamapicontext->SteamMatchmakingServers() )
+		return 0;
+	return (int)steamapicontext->SteamMatchmakingServers()->RequestLANServerList( iApp, pRequestServersResponse );
+}
+
 static bp::tuple PyValidateItemFolder( const char *pszFolder )
 {
 	char szReason[512];
@@ -256,6 +270,9 @@ BOOST_PYTHON_MODULE(_workshop)
 	bp::def( "SendUserQuery", PySendUserQuery );
 	bp::def( "GetQueryResults", PyGetQueryResults );
 	bp::def( "ReleaseQuery", WarsWorkshopSteam_ReleaseQuery );
+
+	// Testing dedicated servers on the local network
+	bp::def( "RequestLANServerList", PyRequestLANServerList );
 
 	bp::scope().attr( "RESULTS_PER_PAGE" ) = WORKSHOP_RESULTS_PER_PAGE;
 

@@ -22,7 +22,8 @@ enum EGameServerState
 	k_EGameServer_InGameFreeStyle, // Not created through matchmaking, but players are on the server
 	k_EGameServer_StartingGame, // Delays sending back the "accept game" message until the game server is started
 	k_EGameServer_GameEnded, // Tells game server the current game ended
-	k_EGameServer_GracePeriod // Period after a game ended before becoming available again
+	k_EGameServer_GracePeriod, // Period after a game ended before becoming available again
+	k_EGameServer_PreparingGame // Downloading the Steam Workshop map of a requested game before starting it
 };
 
 typedef struct WarsMessage_t

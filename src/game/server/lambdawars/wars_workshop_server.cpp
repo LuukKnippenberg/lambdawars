@@ -382,3 +382,55 @@ static unsigned int GetGameAppID()
 	}
 	return 0;
 }
+
+//-----------------------------------------------------------------------------
+// Purpose: 
+//-----------------------------------------------------------------------------
+bool WarsWorkshopServer_IsSupported()
+{
+	return engine->IsDedicatedServer();
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Items mounted by the server operator (wars_sv_workshop_mount) are
+//			used as they are. Items downloaded by Steam are updated if needed.
+//-----------------------------------------------------------------------------
+WorkshopServerItemStatus_t WarsWorkshopServer_PrepareItem( WorkshopItemId_t item )
+{
+	int idx = FindItem( item );
+	if( idx != -1 )
+	{
+		const WorkshopServerItem_t &entry = s_Items[idx];
+		if( entry.bPending )
+			return WORKSHOP_SERVER_ITEM_PENDING;
+		if( entry.bMounted && ( !s_bInitialized || !(WarsWorkshopSteam_GetItemState( item ) & WORKSHOP_ITEM_NEEDS_UPDATE) ) )
+			return WORKSHOP_SERVER_ITEM_READY;
+	}
+
+	return RequestItem( item ) ? WORKSHOP_SERVER_ITEM_PENDING : WORKSHOP_SERVER_ITEM_FAILED;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: A mounted item stays usable if its update failed. The caller
+//			checks the map revision.
+//-----------------------------------------------------------------------------
+WorkshopServerItemStatus_t WarsWorkshopServer_GetItemStatus( WorkshopItemId_t item )
+{
+	int idx = FindItem( item );
+	if( idx == -1 )
+		return WORKSHOP_SERVER_ITEM_FAILED;
+	if( s_Items[idx].bPending )
+		return WORKSHOP_SERVER_ITEM_PENDING;
+	return s_Items[idx].bMounted ? WORKSHOP_SERVER_ITEM_READY : WORKSHOP_SERVER_ITEM_FAILED;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: 
+//-----------------------------------------------------------------------------
+const char *WarsWorkshopServer_GetItemError( WorkshopItemId_t item )
+{
+	int idx = FindItem( item );
+	if( idx == -1 )
+		return "Workshop not available on this server";
+	return s_Items[idx].error.Get();
+}

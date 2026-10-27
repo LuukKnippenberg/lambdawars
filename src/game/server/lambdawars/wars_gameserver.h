@@ -43,6 +43,14 @@ public:
 
 private:
 	bool ValidateMapExists( KeyValues *pGameData ) const;
+	bool ValidateMapRevision( KeyValues *pGameData ) const;
+
+	// Starts a requested game and tells the lobby owner players can connect
+	void AcceptGameRequest( KeyValues *pGameData, CSteamID requesterID, CSteamID lobbySteamID );
+	void DenyGameRequest( CSteamID requesterID );
+	// Waits for the Steam Workshop map of a requested game (k_EGameServer_PreparingGame)
+	void UpdatePreparingGame();
+	void ClearPendingGameRequest();
 
 private:
 	// Tells us when we have successfully connected to Steam
@@ -81,6 +89,11 @@ private:
 
 	// Game data from a local player starting a server
 	KeyValues *m_pLocalPlayerGameData;
+
+	// Game request waiting for its Steam Workshop map
+	KeyValues *m_pPendingGameData;
+	CSteamID m_PendingRequesterID;
+	CSteamID m_PendingLobbySteamID;
 };
 
 inline EGameServerState CWarsGameServer::GetState()

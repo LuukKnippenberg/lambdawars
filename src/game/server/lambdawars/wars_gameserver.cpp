@@ -5,6 +5,8 @@
 #include "filesystem.h"
 #include "tier1/utlbuffer.h"
 #include "wars_network.h"
+#include "wars_workshop_server.h"
+#include "bspfile.h"
 
 #ifdef ENABLE_PYTHON
 #include "srcpy_networkvar.h"
@@ -19,6 +21,9 @@ static ConVar wars_gameserver_debug( "wars_gameserver_debug", "0" );
 
 static ConVar wars_gameserver_graceperiod( "wars_gameserver_graceperiod", "15", 0, "Period after game ended before game server becomes available again" );
 static ConVar wars_gameserver_noplayers_timeout("wars_gameserver_noplayers_timeout", "60", 0, "Time before game server changes back to available when no players are connected." );
+
+// Below the time the lobby waits for a response to a request for a game with a Workshop map
+static ConVar wars_gameserver_workshop_timeout( "wars_gameserver_workshop_timeout", "110", 0, "Time a requested game waits for its Steam Workshop map to download before it is denied" );
 
 static ConVar wars_gameserver_password( "wars_gameserver_password", "", FCVAR_PROTECTED, "Only allows clients with matching mm_password to connect through lobby." );
 
@@ -45,6 +50,7 @@ CWarsGameServer::CWarsGameServer() :
 	m_fLastPlayedConnectedTime( 0.0f ),
 	m_bUpdateMatchmakingTags(true),
 	m_pLocalPlayerGameData(NULL),
+	m_pPendingGameData(NULL),
 	m_bShutdownScheduled(false)
 {
 	DevMsg( "Created Wars game server.\n" );
@@ -161,6 +167,38 @@ void CWarsGameServer::ProcessMessages()
 						Warning( "Denying game server request: provided password does not match wars_gameserver_password setting\n" );
 						steamgameserverapicontext->SteamGameServerNetworking()->SendP2PPacket( messageData->steamIDRemote, &denyGameMsg, sizeof(denyGameMsg), k_EP2PSendReliable, WARSNET_CLIENT_CHANNEL );
 					}
+					// Maps from the Steam Workshop may need to be downloaded first
+					else if( V_atoui64( pGameData->GetString( "game/workshopid", "" ) ) != 0 )
+					{
+						WorkshopItemId_t workshopItem = V_atoui64( pGameData->GetString( "game/workshopid", "" ) );
+						WorkshopServerItemStatus_t status = WarsWorkshopServer_PrepareItem( workshopItem );
+						if( status == WORKSHOP_SERVER_ITEM_READY )
+						{
+							if( ValidateMapExists( pGameData ) && ValidateMapRevision( pGameData ) )
+							{
+								AcceptGameRequest( pGameData, messageData->steamIDRemote, requestMsg->lobbySteamId );
+							}
+							else
+							{
+								Warning( "Denying game server request: Workshop map is missing or a different version.\n" );
+								DenyGameRequest( messageData->steamIDRemote );
+							}
+						}
+						else if( status == WORKSHOP_SERVER_ITEM_PENDING )
+						{
+							Msg( "Downloading Steam Workshop item %llu for requested game...\n", workshopItem );
+							ClearPendingGameRequest();
+							m_pPendingGameData = pGameData->MakeCopy();
+							m_PendingRequesterID = messageData->steamIDRemote;
+							m_PendingLobbySteamID = requestMsg->lobbySteamId;
+							SetState( k_EGameServer_PreparingGame );
+						}
+						else
+						{
+							Warning( "Denying game server request: Workshop item %llu is not available: %s\n", workshopItem, WarsWorkshopServer_GetItemError( workshopItem ) );
+							DenyGameRequest( messageData->steamIDRemote );
+						}
+					}
 					// Verify it has a valid map. Could get stuck on loading otherwise!
 					else if( !ValidateMapExists( pGameData ) )
 					{
@@ -171,29 +209,7 @@ void CWarsGameServer::ProcessMessages()
 					{
 	
 
-						SetState( k_EGameServer_StartingGame );
-						m_ActiveGameLobbySteamID = requestMsg->lobbySteamId;
-
-						pGameData->SetName( COM_GetModDirectory() );
-						
-						Msg("Starting wars game server with following settings: ");
-						KeyValuesDumpAsDevMsg( pGameData, 0, 0 );
-
-						g_ServerGameDLL.ApplyGameSettings( pGameData );
-
-						// Game server is already running, so we have an IP
-						// Tell lobby owner the game is accepted and players can connect to the server
-						uint32 publicIP = steamgameserverapicontext->SteamGameServer()->GetPublicIP();
-						if( publicIP == 0 )
-						{
-							Warning("CWarsGameServer: Game server has no valid public IP according to Steam.");
-						}
-
-						acceptGameMsg.publicIP = publicIP;
-						acceptGameMsg.gamePort = hostport.GetInt();
-						acceptGameMsg.serverSteamID = steamgameserverapicontext->SteamGameServer()->GetSteamID().ConvertToUint64();
-						
-						steamgameserverapicontext->SteamGameServerNetworking()->SendP2PPacket( messageData->steamIDRemote, &acceptGameMsg, sizeof(acceptGameMsg), k_EP2PSendReliable, WARSNET_CLIENT_CHANNEL );
+						AcceptGameRequest( pGameData, messageData->steamIDRemote, requestMsg->lobbySteamId );
 					}
 				}
 				break;
@@ -264,6 +280,11 @@ void CWarsGameServer::UpdateServer()
 	{
 		case k_EGameServer_StartingGame:
 		{
+			break;
+		}
+		case k_EGameServer_PreparingGame:
+		{
+			UpdatePreparingGame();
 			break;
 		}
 		case k_EGameServer_InGame:
@@ -388,6 +409,135 @@ bool CWarsGameServer::ValidateMapExists( KeyValues *pGameData ) const
 }
 
 //-----------------------------------------------------------------------------
+// Purpose: The lobby sends the revision of the host's copy of a Workshop map.
+//			Players would fail to load a different version.
+//-----------------------------------------------------------------------------
+bool CWarsGameServer::ValidateMapRevision( KeyValues *pGameData ) const
+{
+	const char *pRevision = pGameData->GetString( "game/maprevision", "" );
+	if( !pRevision[0] )
+	{
+		return true;
+	}
+
+	char path[MAX_PATH];
+	V_snprintf( path, sizeof( path ), "maps\\%s.bsp", pGameData->GetString( "game/mission", "" ) );
+	FileHandle_t fh = filesystem->Open( path, "rb", "GAME" );
+	if( fh == FILESYSTEM_INVALID_HANDLE )
+	{
+		return false;
+	}
+
+	BSPHeader_t header;
+	bool bValid = filesystem->Read( &header, sizeof( header ), fh ) == sizeof( header ) && header.mapRevision == V_atoi( pRevision );
+	filesystem->Close( fh );
+
+	if( !bValid )
+	{
+		Warning( "Map %s is a different version than requested (revision %s)\n", path, pRevision );
+	}
+	return bValid;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose:
+//-----------------------------------------------------------------------------
+void CWarsGameServer::AcceptGameRequest( KeyValues *pGameData, CSteamID requesterID, CSteamID lobbySteamID )
+{
+	ConVarRef hostport("hostport");
+
+	SetState( k_EGameServer_StartingGame );
+	m_ActiveGameLobbySteamID = lobbySteamID;
+
+	pGameData->SetName( COM_GetModDirectory() );
+
+	Msg("Starting wars game server with following settings: ");
+	KeyValuesDumpAsDevMsg( pGameData, 0, 0 );
+
+	g_ServerGameDLL.ApplyGameSettings( pGameData );
+
+	// Game server is already running, so we have an IP
+	// Tell lobby owner the game is accepted and players can connect to the server
+	uint32 publicIP = steamgameserverapicontext->SteamGameServer()->GetPublicIP();
+	if( publicIP == 0 )
+	{
+		Warning("CWarsGameServer: Game server has no valid public IP according to Steam.");
+	}
+
+	WarsAcceptGameMessage_t acceptGameMsg( k_EMsgClientRequestGameAccepted );
+	acceptGameMsg.publicIP = publicIP;
+	acceptGameMsg.gamePort = hostport.GetInt();
+	acceptGameMsg.serverSteamID = steamgameserverapicontext->SteamGameServer()->GetSteamID().ConvertToUint64();
+
+	steamgameserverapicontext->SteamGameServerNetworking()->SendP2PPacket( requesterID, &acceptGameMsg, sizeof(acceptGameMsg), k_EP2PSendReliable, WARSNET_CLIENT_CHANNEL );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: Tells the lobby owner to look for another server
+//-----------------------------------------------------------------------------
+void CWarsGameServer::DenyGameRequest( CSteamID requesterID )
+{
+	WarsMessage_t denyGameMsg( k_EMsgClientRequestGameDenied );
+	steamgameserverapicontext->SteamGameServerNetworking()->SendP2PPacket( requesterID, &denyGameMsg, sizeof(denyGameMsg), k_EP2PSendReliable, WARSNET_CLIENT_CHANNEL );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose:
+//-----------------------------------------------------------------------------
+void CWarsGameServer::UpdatePreparingGame()
+{
+	if( !m_pPendingGameData )
+	{
+		SetState( k_EGameServer_Available );
+		return;
+	}
+
+	WorkshopItemId_t workshopItem = V_atoui64( m_pPendingGameData->GetString( "game/workshopid", "" ) );
+	WorkshopServerItemStatus_t status = WarsWorkshopServer_GetItemStatus( workshopItem );
+	if( status == WORKSHOP_SERVER_ITEM_PENDING )
+	{
+		if( Plat_FloatTime() - m_fGameStateStartTime < wars_gameserver_workshop_timeout.GetFloat() )
+		{
+			return;
+		}
+		Warning( "Denying game server request: downloading Workshop item %llu timed out.\n", workshopItem );
+		DenyGameRequest( m_PendingRequesterID );
+	}
+	else if( status == WORKSHOP_SERVER_ITEM_READY && ValidateMapExists( m_pPendingGameData ) && ValidateMapRevision( m_pPendingGameData ) )
+	{
+		KeyValues *pGameData = m_pPendingGameData;
+		m_pPendingGameData = NULL;
+		AcceptGameRequest( pGameData, m_PendingRequesterID, m_PendingLobbySteamID );
+		pGameData->deleteThis();
+		ClearPendingGameRequest();
+		return;
+	}
+	else
+	{
+		Warning( "Denying game server request: Workshop item %llu is not available: %s\n", workshopItem,
+			status == WORKSHOP_SERVER_ITEM_READY ? "map is missing or a different version" : WarsWorkshopServer_GetItemError( workshopItem ) );
+		DenyGameRequest( m_PendingRequesterID );
+	}
+
+	ClearPendingGameRequest();
+	SetState( k_EGameServer_Available );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose:
+//-----------------------------------------------------------------------------
+void CWarsGameServer::ClearPendingGameRequest()
+{
+	if( m_pPendingGameData )
+	{
+		m_pPendingGameData->deleteThis();
+		m_pPendingGameData = NULL;
+	}
+	m_PendingRequesterID.Clear();
+	m_PendingLobbySteamID.Clear();
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
 void CWarsGameServer::ClientDisconnect( edict_t *pEdict )
@@ -461,6 +611,15 @@ char *CWarsGameServer::GetMatchmakingTags( char *buf, size_t &bufSize )
 	if( m_State == k_EGameServer_Available )
 	{
 		V_strncpy( buf, "Available,", bufSize );
+		len = V_strlen( buf );
+		buf += len;
+		bufSize -= len;
+	}
+
+	// Lobbies only request games with Steam Workshop maps from servers that can download them
+	if( WarsWorkshopServer_IsSupported() )
+	{
+		V_strncpy( buf, "Workshop,", bufSize );
 		len = V_strlen( buf );
 		buf += len;
 		bufSize -= len;
