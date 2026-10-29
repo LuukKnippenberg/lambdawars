@@ -333,6 +333,7 @@ cscript //nologo ..\..\dllcopy.wsf "$(TargetDir)/$(TargetName).pdb" "$(TargetNam
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="lambdawars\wars_minimapcapture.cpp" />
     <ClCompile Include="lambdawars\wars_workshop.cpp" />
     <ClCompile Include="..\shared\lambdawars\wars_workshop_content.cpp" />
     <ClCompile Include="lambdawars\wars_workshop_python.cpp" />
@@ -1560,6 +1561,7 @@ cscript //nologo ..\..\dllcopy.wsf "$(TargetDir)/$(TargetName).pdb" "$(TargetNam
     <ClInclude Include="deferred\viewrender_deferred.h" />
     <ClInclude Include="lambdawars\c_wars_steamstats.h" />
     <ClInclude Include="lambdawars\wars_filedialog.h" />
+    <ClInclude Include="lambdawars\wars_minimapcapture.h" />
     <ClInclude Include="lambdawars\wars_workshop.h" />
     <ClInclude Include="..\shared\lambdawars\wars_workshop_content.h" />
     <ClInclude Include="..\shared\lambdawars\wars_workshop_steam.h" />

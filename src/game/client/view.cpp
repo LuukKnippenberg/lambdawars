@@ -67,6 +67,10 @@
 
 
 	
+#ifdef HL2WARS_DLL
+#include "wars_minimapcapture.h"
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 		  
@@ -991,6 +995,16 @@ void CViewRender::Render( vrect_t *rect )
 			nClearFlags |= VIEW_CLEAR_COLOR;
 			drawViewModel = false;
 		}
+
+#ifdef HL2WARS_DLL
+		// Capturing the minimap of the map from above
+		if ( WarsMinimapCapture_SetupView( view ) )
+		{
+			nClearFlags |= VIEW_CLEAR_COLOR;
+			drawViewModel = false;
+			WarsMinimapCapture_SetClearColor();
+		}
+#endif
 
 		render->SetMainView( view.origin, view.angles );
 

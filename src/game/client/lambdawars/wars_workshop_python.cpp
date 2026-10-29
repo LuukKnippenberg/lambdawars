@@ -13,6 +13,7 @@
 #include "wars_workshop_steam.h"
 #include "wars_workshop_content.h"
 #include "wars_filedialog.h"
+#include "wars_minimapcapture.h"
 #include "srcpy_steam.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
@@ -257,6 +258,20 @@ static bp::tuple PyValidateItemFolder( const char *pszFolder )
 	return bp::make_tuple( bValid, (const char *)szReason );
 }
 
+static bp::object PyGetMinimapCaptureResult()
+{
+	const WarsMinimapCaptureResult_t &result = WarsMinimapCapture_GetResult();
+	if( !result.bDone )
+		return bp::object();
+	bp::dict d;
+	d["success"] = result.bSuccess;
+	d["error"] = (const char *)result.error;
+	d["pos_x"] = result.posX;
+	d["pos_y"] = result.posY;
+	d["scale"] = result.scale;
+	return d;
+}
+
 BOOST_PYTHON_MODULE(_workshop)
 {
 	bp::def( "IsAvailable", WarsWorkshopSteam_IsAvailable );
@@ -296,6 +311,13 @@ BOOST_PYTHON_MODULE(_workshop)
 
 	// Testing dedicated servers on the local network
 	bp::def( "RequestLANServerList", PyRequestLANServerList );
+
+	// Capturing the minimap of the current map. GetMinimapCaptureResult returns None until
+	// the capture is done, then {success, error, pos_x, pos_y, scale}.
+	bp::def( "StartMinimapCapture", WarsMinimapCapture_Start );
+	bp::def( "CancelMinimapCapture", WarsMinimapCapture_Cancel );
+	bp::def( "IsMinimapCaptureActive", WarsMinimapCapture_IsActive );
+	bp::def( "GetMinimapCaptureResult", PyGetMinimapCaptureResult );
 
 	bp::scope().attr( "RESULTS_PER_PAGE" ) = WORKSHOP_RESULTS_PER_PAGE;
 

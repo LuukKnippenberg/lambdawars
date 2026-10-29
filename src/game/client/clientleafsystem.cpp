@@ -28,6 +28,10 @@
 #include "con_nprint.h"
 //#include "tier0/miniprofiler.h" 
 
+#ifdef HL2WARS_DLL
+#include "wars_minimapcapture.h"
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -2200,6 +2204,14 @@ int CClientLeafSystem::ComputeTranslucency( int nFrameNumber, int nViewID, int n
 	{
 		bFadeProps = false;
 	}
+
+#ifdef HL2WARS_DLL
+	// Nothing fades while capturing the minimap from far above
+	if ( WarsMinimapCapture_IsActive() )
+	{
+		bFadeProps = false;
+	}
+#endif
 
 	if ( !g_MakingDevShots && !cl_leveloverview.GetInt() && bFadeProps )
 	{

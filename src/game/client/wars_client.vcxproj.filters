@@ -2468,6 +2468,9 @@
     <ClCompile Include="lambdawars\wars_filedialog.cpp">
       <Filter>Source Files\wars</Filter>
     </ClCompile>
+    <ClCompile Include="lambdawars\wars_minimapcapture.cpp">
+      <Filter>Source Files\wars</Filter>
+    </ClCompile>
     <ClCompile Include="lambdawars\wars_workshop.cpp">
       <Filter>Source Files\wars</Filter>
     </ClCompile>
@@ -5015,6 +5018,9 @@
       <Filter>Source Files\wars</Filter>
     </ClInclude>
     <ClInclude Include="lambdawars\wars_filedialog.h">
+      <Filter>Source Files\wars</Filter>
+    </ClInclude>
+    <ClInclude Include="lambdawars\wars_minimapcapture.h">
       <Filter>Source Files\wars</Filter>
     </ClInclude>
     <ClInclude Include="lambdawars\wars_workshop.h">

@@ -185,6 +185,10 @@ CefRefPtr<CefResourceHandler> VTFSchemeHandlerFactory::Create(CefRefPtr<CefBrows
 	CefParseURL(request->GetURL(), parts);
 
 	std::string strVtfPath = CefString(&parts.path);
+	// A query, like ?v=<time> so a replaced file isn't shown from the cache, isn't part of the file name
+	size_t iQuery = strVtfPath.find( '?' );
+	if( iQuery != std::string::npos )
+		strVtfPath.erase( iQuery );
 
 	char vtfPath[MAX_PATH];
 	V_snprintf( vtfPath, sizeof( vtfPath ), "materials/%s", strVtfPath.c_str() );

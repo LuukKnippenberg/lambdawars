@@ -32,6 +32,10 @@
 #include "vgui_int.h"
 #include "cdll_client_int.h"
 
+#ifdef HL2WARS_DLL
+#include "wars_minimapcapture.h"
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -975,6 +979,10 @@ unsigned char UTIL_ComputeEntityFade( C_BaseEntity *pEntity, float flMinDist, fl
 	// If we're taking devshots, don't fade props at all
 	if ( g_MakingDevShots || cl_leveloverview.GetFloat() > 0 )
 		return 255;
+#ifdef HL2WARS_DLL
+	if ( WarsMinimapCapture_IsActive() )
+		return 255;
+#endif
 
 #ifdef _DEBUG
 	if ( r_FadeProps.GetBool() )

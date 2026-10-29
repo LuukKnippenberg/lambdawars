@@ -62,6 +62,10 @@
 #include "deferred/deferred_shared_common.h"
 
 
+#ifdef HL2WARS_DLL
+#include "wars_minimapcapture.h"
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -751,6 +755,11 @@ static inline unsigned long BuildEngineDrawWorldListFlags( unsigned nDrawFlags )
 //-----------------------------------------------------------------------------
 static void SetClearColorToFogColor()
 {
+#ifdef HL2WARS_DLL
+	// No fog color behind the world while capturing the minimap
+	if ( WarsMinimapCapture_SetClearColor() )
+		return;
+#endif
 	unsigned char ucFogColor[3];
 	CMatRenderContextPtr pRenderContext( materials );
 	pRenderContext->GetFogColor( ucFogColor );
@@ -2062,6 +2071,11 @@ void CDeferredViewRender::RenderView( const CViewSetup &view, const CViewSetup &
 		pRenderContext->PopRenderTargetAndViewport();
 		pRenderContext->Release();
 	}
+
+#ifdef HL2WARS_DLL
+	// The minimap capture reads the rendered world, before the HUD is drawn
+	WarsMinimapCapture_OnRenderedWorld( worldView.x, worldView.y, worldView.width, worldView.height );
+#endif
 
 	// Draw the 2D graphics
 	m_CurrentView = hudViewSetup;
