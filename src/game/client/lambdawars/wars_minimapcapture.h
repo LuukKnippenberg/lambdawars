@@ -27,8 +27,9 @@ struct WarsMinimapCaptureResult_t
 };
 
 // Starts capturing the minimap of the current map, written as vtf to pszPath (absolute) with a size of
-// iResolution pixels. Returns false if it can't start, the result has the reason.
-bool WarsMinimapCapture_Start( const char *pszPath, int iResolution );
+// iResolution pixels. flMargin is the space around the playable area on each side, in parts of its size.
+// Returns false if it can't start, the result has the reason.
+bool WarsMinimapCapture_Start( const char *pszPath, int iResolution, float flMargin );
 void WarsMinimapCapture_Cancel();
 bool WarsMinimapCapture_IsActive();
 const WarsMinimapCaptureResult_t &WarsMinimapCapture_GetResult();

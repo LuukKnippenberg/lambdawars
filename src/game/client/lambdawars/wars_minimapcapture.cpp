@@ -32,13 +32,8 @@ static const float MINIMAP_CAPTURE_FOV = 20.0f;
 static const int MINIMAP_CAPTURE_SETTLE_FRAMES = 10;
 // Number of traces per side used to find the height of the ground
 static const int MINIMAP_CAPTURE_GROUND_SAMPLES = 7;
-// Empty parts of the minimap (no geometry below) are found with a trace per this many pixels per side
-static const int MINIMAP_CAPTURE_EMPTY_STEP = 2;
-// Empty parts get the hatch pattern of the menu: diagonal stripes, sized for a minimap of 512 pixels
-static const int MINIMAP_CAPTURE_HATCH_PERIOD = 17;
-static const int MINIMAP_CAPTURE_HATCH_STRIPE = 9;
-static const unsigned char MINIMAP_CAPTURE_HATCH_DARK[3] = { 28, 26, 23 };
-static const unsigned char MINIMAP_CAPTURE_HATCH_LIGHT[3] = { 36, 34, 32 };
+// Color where no geometry is drawn, the dark of the menu panels
+static const unsigned char MINIMAP_CAPTURE_BACKGROUND[3] = { 28, 26, 23 };
 
 struct MinimapCapture_t
 {
@@ -53,9 +48,6 @@ struct MinimapCapture_t
 	float flTanHalfFov;
 	float flZNear;
 	float flZFar;
-	// Height range of the world
-	float flTop;
-	float flBottom;
 	// Aspect ratio of the view, set when the view is set up
 	float flAspect;
 };
@@ -140,7 +132,7 @@ static float GetGroundHeight( const Vector &mins, const Vector &maxs )
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-bool WarsMinimapCapture_Start( const char *pszPath, int iResolution )
+bool WarsMinimapCapture_Start( const char *pszPath, int iResolution, float flMargin )
 {
 	V_memset( &s_Result, 0, sizeof( s_Result ) );
 	s_Capture.bActive = false;
@@ -163,11 +155,13 @@ bool WarsMinimapCapture_Start( const char *pszPath, int iResolution )
 		return false;
 	}
 
+	// The margin is added on each side, in parts of the size of the playable area. The HUD shows the minimap
+	// in a circle inside the square image, from about 0.21 all of the playable area fits in it.
 	float flGround = GetGroundHeight( mins, maxs );
-	float flSize = MAX( maxs.x - mins.x, maxs.y - mins.y );
+	float flSize = MAX( maxs.x - mins.x, maxs.y - mins.y ) * ( 1.0f + 2.0f * clamp( flMargin, 0.0f, 1.0f ) );
 	Vector vecCenter( ( mins.x + maxs.x ) * 0.5f, ( mins.y + maxs.y ) * 0.5f, flGround );
 
-	// High enough that the square playable area fills the field of view, and above everything of the world
+	// High enough that the square minimap fills the field of view, and above everything of the world
 	C_World *pWorld = GetClientWorldEntity();
 	float flTop = MAX( maxs.z, pWorld ? pWorld->m_WorldMaxs.z : maxs.z );
 	float flBottom = MIN( mins.z, pWorld ? pWorld->m_WorldMins.z : mins.z );
@@ -184,8 +178,6 @@ bool WarsMinimapCapture_Start( const char *pszPath, int iResolution )
 	s_Capture.flTanHalfFov = ( flSize * 0.5f ) / flDistance;
 	s_Capture.flZNear = MAX( 8.0f, s_Capture.vecCamera.z - flTop - 64.0f );
 	s_Capture.flZFar = s_Capture.vecCamera.z - flBottom + 256.0f;
-	s_Capture.flTop = flTop;
-	s_Capture.flBottom = flBottom;
 	s_Capture.bActive = true;
 
 	DevMsg( "Minimap capture: center %.0f %.0f, ground %.0f, size %.0f, camera height %.0f\n",
@@ -233,104 +225,15 @@ bool WarsMinimapCapture_SetupView( CViewSetup &view )
 }
 
 //-----------------------------------------------------------------------------
-// Purpose: The dark color of the hatch pattern, so what is left of it along the edges of empty parts
-//			blends in with the pattern
+// Purpose: Instead of the fog color, which the renderer clears to when it sees no sky from above
 //-----------------------------------------------------------------------------
 bool WarsMinimapCapture_SetClearColor()
 {
 	if( !s_Capture.bActive )
 		return false;
 	CMatRenderContextPtr pRenderContext( materials );
-	pRenderContext->ClearColor4ub( MINIMAP_CAPTURE_HATCH_DARK[0], MINIMAP_CAPTURE_HATCH_DARK[1], MINIMAP_CAPTURE_HATCH_DARK[2], 255 );
+	pRenderContext->ClearColor4ub( MINIMAP_CAPTURE_BACKGROUND[0], MINIMAP_CAPTURE_BACKGROUND[1], MINIMAP_CAPTURE_BACKGROUND[2], 255 );
 	return true;
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: Whether geometry is seen through a pixel of the minimap (0 to 1, from the top left).
-//			Traces from above the world along the view ray of the camera. Sky and nodraw surfaces,
-//			like the top of the skybox, are passed through.
-//-----------------------------------------------------------------------------
-static bool HasGeometryBelow( float u, float v )
-{
-	Vector vecGround( s_Capture.vecCenter.x + ( u - 0.5f ) * s_Capture.flSize,
-		s_Capture.vecCenter.y + ( 0.5f - v ) * s_Capture.flSize, s_Capture.vecCenter.z );
-	Vector vecDir = vecGround - s_Capture.vecCamera;
-	float flDown = -vecDir.z;
-	if( flDown <= 0.0f )
-		return true;
-
-	Vector vecStart = s_Capture.vecCamera + vecDir * ( ( s_Capture.vecCamera.z - s_Capture.flTop - 16.0f ) / flDown );
-	Vector vecEnd = s_Capture.vecCamera + vecDir * ( ( s_Capture.vecCamera.z - s_Capture.flBottom + 16.0f ) / flDown );
-	Vector vecStep = vecDir;
-	VectorNormalize( vecStep );
-
-	CTraceFilterWorldOnly filter;
-	for( int i = 0; i < 8; i++ )
-	{
-		trace_t tr;
-		UTIL_TraceLine( vecStart, vecEnd, MASK_SOLID_BRUSHONLY, &filter, &tr );
-		if( tr.allsolid )
-			return true;
-		if( tr.fraction >= 1.0f )
-			return false;
-		if( !( tr.surface.flags & ( SURF_SKY | SURF_SKY2D | SURF_NODRAW ) ) )
-			return true;
-		vecStart = tr.endpos + vecStep;
-	}
-	return true;
-}
-
-//-----------------------------------------------------------------------------
-// Purpose: Fills the parts without geometry with the hatch pattern of the menu, instead of whatever
-//			the renderer leaves there. Pixels next to an empty part get the pattern too, instead of
-//			blending, because a blend shows the color the renderer left as a line along the edge.
-//-----------------------------------------------------------------------------
-static void FillEmptyParts( unsigned char *pPixels, int iResolution )
-{
-	int iGrid = iResolution / MINIMAP_CAPTURE_EMPTY_STEP;
-	CUtlVector< float > geometry;
-	geometry.SetCount( iGrid * iGrid );
-	bool bAnyEmpty = false;
-	for( int y = 0; y < iGrid; y++ )
-	{
-		for( int x = 0; x < iGrid; x++ )
-		{
-			bool bGeometry = HasGeometryBelow( ( x + 0.5f ) / iGrid, ( y + 0.5f ) / iGrid );
-			geometry[ y * iGrid + x ] = bGeometry ? 1.0f : 0.0f;
-			bAnyEmpty |= !bGeometry;
-		}
-	}
-	if( !bAnyEmpty )
-		return;
-
-	float flHatchScale = iResolution / 512.0f;
-	for( int y = 0; y < iResolution; y++ )
-	{
-		// Bilinear sample of the grid, at the center of the pixel
-		float gy = clamp( ( y + 0.5f ) / MINIMAP_CAPTURE_EMPTY_STEP - 0.5f, 0.0f, iGrid - 1.0f );
-		int y0 = (int)gy;
-		int y1 = MIN( y0 + 1, iGrid - 1 );
-		float fy = gy - y0;
-		for( int x = 0; x < iResolution; x++ )
-		{
-			float gx = clamp( ( x + 0.5f ) / MINIMAP_CAPTURE_EMPTY_STEP - 0.5f, 0.0f, iGrid - 1.0f );
-			int x0 = (int)gx;
-			int x1 = MIN( x0 + 1, iGrid - 1 );
-			float fx = gx - x0;
-			float flGeometry = Lerp( fy, Lerp( fx, geometry[ y0 * iGrid + x0 ], geometry[ y0 * iGrid + x1 ] ),
-				Lerp( fx, geometry[ y1 * iGrid + x0 ], geometry[ y1 * iGrid + x1 ] ) );
-			if( flGeometry >= 1.0f )
-				continue;
-
-			// Any part empty is the pattern
-
-			int iHatch = (int)( ( x + y ) / flHatchScale ) % MINIMAP_CAPTURE_HATCH_PERIOD;
-			const unsigned char *pHatch = iHatch < MINIMAP_CAPTURE_HATCH_STRIPE ? MINIMAP_CAPTURE_HATCH_LIGHT : MINIMAP_CAPTURE_HATCH_DARK;
-			unsigned char *pPixel = pPixels + ( y * iResolution + x ) * 4;
-			for( int c = 0; c < 3; c++ )
-				pPixel[c] = pHatch[c];
-		}
-	}
 }
 
 //-----------------------------------------------------------------------------
@@ -368,7 +271,6 @@ static bool WriteMinimap( int x, int y, int width, int height, const char **ppsz
 	}
 	for( int i = 0; i < iResolution * iResolution; i++ )
 		pixels[ i * 4 + 3 ] = 255;
-	FillEmptyParts( pixels.Base(), iResolution );
 
 	IVTFTexture *pTexture = CreateVTFTexture();
 	bool bSuccess = pTexture->Init( iResolution, iResolution, 1, IMAGE_FORMAT_RGBA8888,
