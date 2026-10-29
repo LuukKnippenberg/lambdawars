@@ -267,7 +267,16 @@ void SrcCefVGUIPanel::Paint()
 				return;
 		}
 
-		SetCursor( renderer->GetCursor() );
+		// Hover cursor (CSS "cursor: pointer") uses the orange Lambda Wars arrow instead of the Windows hand.
+		// Loaded here and not in OnCursorChange, because that runs on the CEF UI thread.
+		vgui::HCursor cursor = renderer->GetCursor();
+		if( cursor == vgui::dc_hand )
+		{
+			static vgui::HCursor s_hHoverCursor = vgui::surface()->CreateCursorFromFile( "resource/arrows/select_cursor_orange.cur" );
+			if( s_hHoverCursor )
+				cursor = s_hHoverCursor;
+		}
+		SetCursor( cursor );
 
 		if( g_pShaderAPI && m_RenderBuffer.IsValid() )
 		{
