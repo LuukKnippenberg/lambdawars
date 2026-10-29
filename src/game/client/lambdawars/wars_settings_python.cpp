@@ -1,4 +1,4 @@
-//====== Copyright © Sandern Corporation, All rights reserved. ===========//
+//=============================================================================//
 //
 // Purpose: Hand-written Python module "_gamesettings" for the settings page of
 //			the menu. Gives access to what the native option dialogs
